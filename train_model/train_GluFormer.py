@@ -8,6 +8,20 @@ import wandb
 import random
 import torch
 import os
+import sys
+# # ____________אני עשיתי________
+import pickle
+import pandas.core.indexes.base
+# Comprehensive compatibility hack for Pandas 1.x to 2.x
+sys.modules['pandas.core.indexes.numeric'] = pandas.core.indexes.base
+if not hasattr(pandas.core.indexes.base, 'Int64Index'):
+    pandas.core.indexes.base.Int64Index = pandas.core.indexes.base.Index
+if not hasattr(pandas.core.indexes.base, 'Float64Index'):
+    pandas.core.indexes.base.Float64Index = pandas.core.indexes.base.Index
+if not hasattr(pandas.core.indexes.base, 'UInt64Index'):
+    pandas.core.indexes.base.UInt64Index = pandas.core.indexes.base.Index
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# #__________אני עשיתי___________
 
 hyperparameter_defaults = dict(
     epochs=76,
@@ -17,16 +31,16 @@ hyperparameter_defaults = dict(
     gamma=0.99,
     dropout=0.1,
 
-    n_embd=1024,
-    n_heads=16,
-    n_layers=16,
-    dim_feedforward=2048,
-    max_seq_length=25000,
+    n_embd=256,
+    n_heads=8,
+    n_layers=4,
+    dim_feedforward=512,
+    max_seq_length=3000,
 
     chunk_size=1200,
 
     seed=42,
-    batch_per_gpu=32,
+    batch_per_gpu=1,
 
 )
 print(hyperparameter_defaults)
@@ -47,17 +61,30 @@ chunks = 460
 chunk_size = config.chunk_size  # Fixed size for each chunk
 PAD_TOKEN = chunks  # Assuming -1 is not a valid glucose measurement
 
+# class GlucoseDataset(Dataset):
+#    def __init__(self, data):
+#        self.data = data
 
+#    def __len__(self):
+#        return len(self.data)
+
+#    def __getitem__(self, idx):
+#        # Returns a single item at index `idx` from the data
+#        return self.data[idx]
+
+# #____שיניתי לזה_____    
 class GlucoseDataset(Dataset):
-    def __init__(self, data):
-        self.data = data
+   def __init__(self, data):
+       self.data = data
 
-    def __len__(self):
-        return len(self.data)
+   def __len__(self):
+       return len(self.data)
 
-    def __getitem__(self, idx):
-        # Returns a single item at index `idx` from the data
-        return self.data[idx]
+   def __getitem__(self, idx):
+       # המרה של הנתון (שהוא Pandas Series) לטנזור של PyTorch
+       # אנחנו משתמשים ב-long כי אלו טוקנים (ערכים שלמים)
+       return torch.tensor(self.data[idx].values, dtype=torch.long)
+#       #____עד פה____
 
 
 class TransformerModel(nn.Module):
@@ -119,10 +146,20 @@ class TransformerModel(nn.Module):
 batch_size_per_gpu = config.batch_per_gpu
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-my_path = f"cgm_diet_filtered_processed_aligned_tokenized_tensors_train.pt"
-train_dataset = GlucoseDataset(torch.load(my_path)['tokens'])
-my_path = f"cgm_diet_filtered_processed_aligned_tokenized_tensors_val.pt"
+my_path = f"train_cgmacros.pt"
+train_dataset = GlucoseDataset(torch.load(my_path, weights_only=False)['tokens'])
+my_path = f"val_cgmacros.pt"
 val_dataset = GlucoseDataset(torch.load(my_path)['tokens'])
+
+# # טעינת נתוני אימון בעזרת pickle זה אני עשיתי
+# with open("cgm_diet_filtered_processed_aligned_tokenized_tensors_train.pt", 'rb') as f:
+#     train_data_dict = pickle.load(f)
+# train_dataset = GlucoseDataset(train_data_dict['tokens'])
+
+# # טעינת נתוני וולידציה בעזרת pickle זה אני
+# with open("cgm_diet_filtered_processed_aligned_tokenized_tensors_val.pt", 'rb') as f:
+#     val_data_dict = pickle.load(f)
+# val_dataset = GlucoseDataset(val_data_dict['tokens'])
 
 # print sizes
 print(f"train size: {len(train_dataset)}")
@@ -142,7 +179,8 @@ vocab_size = chunks
 n_embd = config.n_embd
 dim_feedforward = config.dim_feedforward
 # Assuming the model and dataloader are already defined
-model = TransformerModel(vocab_size, n_embd, n_heads=config.n_heads, n_layers=config.n_layers, max_seq_length=25000,
+model = TransformerModel(vocab_size, n_embd, n_heads=config.n_heads, n_layers=config.n_layers, 
+                         max_seq_length=config.max_seq_length,
                          dropout=config.dropout, dim_feedforward=dim_feedforward).to(device)
 print(f"num of parameters: {sum(p.numel() for p in model.parameters())}")
 wandb.log({"num of parameters": sum(p.numel() for p in model.parameters())})
@@ -190,12 +228,26 @@ for epoch in range(num_epochs):
                 for i, batch in enumerate(val_dataloader):
                     print(f"batch {i}")
                     inputs = batch.to(device)
-                    mask = (inputs == PAD_TOKEN)
-                    # Shift the inputs to the right for the target sequence
+                    
+                    # 1. קודם כל מבצעים את החיתוך (Shift)
                     inputs, targets = inputs[:, :-1], inputs[:, 1:]
+                    
+                    # 2. ורק אז יוצרים את המסיכה לפי האורך החדש של ה-inputs
+                    mask = (inputs == PAD_TOKEN)
 
                     logits = model(inputs, mask=mask)
-                    loss_ = F.cross_entropy(logits.view(-1, vocab_size), targets.view(-1), ignore_index=PAD_TOKEN)
+                    # ... שאר הקוד ממשיך כרגיל
+                # for i, batch in enumerate(val_dataloader):
+                #     print(f"batch {i}")
+                #     inputs = batch.to(device)
+                #     mask = (inputs == PAD_TOKEN)
+                #     # Shift the inputs to the right for the target sequence
+                #     inputs, targets = inputs[:, :-1], inputs[:, 1:]
+
+                #     logits = model(inputs, mask=mask)
+                #   loss_ = F.cross_entropy(logits.view(-1, vocab_size), targets.view(-1), ignore_index=PAD_TOKEN)
+                # השימוש ב-reshape פותר את בעיית הרציפות בזיכרון באופן אוטומטי
+                    loss_ = F.cross_entropy(logits.reshape(-1, vocab_size), targets.reshape(-1), ignore_index=PAD_TOKEN)
                     loss_avg = loss_avg + loss_.item()
                     acc_logits.append(logits)
                     acc_targets.append(targets)

@@ -82,8 +82,8 @@ def re_org_time(per_person):
     for i in tqdm(range(len(cgm_diet))):
         data = cgm_diet[i]
         data.index = data["RegistrationCode"]
-        data = data.drop("RegistrationCode", 1)
-        data = data.drop("ConnectionID", 1)
+        data = data.drop(columns=["RegistrationCode"])#שינוי1
+        data = data.drop(columns=["ConnectionID"], errors='ignore')#שינוי2
         data["Date"] = data["Date"].apply(lambda x: str(x))
         day_of_week = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5,
                        'Sunday': 6}
@@ -98,8 +98,8 @@ def re_org_time(per_person):
         data['year'] = data["date"].apply(lambda x: int(x.split("-")[0]))
         # and make them into a single numerical value
         # data = data.drop("Date", 1)
-        data = data.drop("hours", 1)
-        data = data.drop("date", 1)
+        data = data.drop(columns=["hours"])#שינוי3
+        data = data.drop(columns=["date"])#שינוי4
 
         # clip GlucoseValue to 40 - 500
         data['GlucoseValue'] = data['GlucoseValue'].clip(40, 500)
@@ -115,34 +115,45 @@ def re_org_time(per_person):
         # impute missing values with 0
         data = data.fillna(0)
         data['Date'] = pd.to_datetime(data['Date'])
+        # if difference between each row is more than 15 minutes שינוי6
         # if difference between each row is more than 15 minutes
         if data['Date'].diff().dt.total_seconds().gt(905).any():
             print(f"splitting {i}")
+            
+            # --- הוספנו את זה כדי למנוע את הקריסה ---
+            temp_df = data.copy() 
+            
             # if the difference is more than an hour we do nothing (it will get split later)
             # but if its less than an hour, we want to add places for the missing values with nans
             # check for places where the difference is more than 15 minutes but less than an hour
             jumps = data['Date'].diff().dt.total_seconds().gt(1400) & data['Date'].diff().dt.total_seconds().lt(
                 60 * 60 * 4)
-            # for each we want to add nans (as many times such that the is exactly 15 minutes between each row)
-            for i in data[jumps]['Date']:
-                # i is the index (name) of the row where the jump is
+            
+            # --- שינינו פה מ-i ל-j כדי לא לדרוס את מספר המטופל ---
+            for j in data[jumps]['Date']: 
+                # j is the index (name) of the row where the jump is
                 # find the difference in seconds
-                times = pd.DataFrame(data.index, index=data['Date'])
-                diff = i - times.index[times.index.get_loc(i) - 1]
+                
+                # --- שינינו פה שישתמש ב-temp_df ---
+                times = pd.DataFrame(temp_df.index, index=temp_df['Date']) 
+                diff = j - times.index[times.index.get_loc(j) - 1]
                 diff = diff.total_seconds()
                 # find the number of nans to add
                 nans_to_add = round((diff / 900)) - 1
-                # create a df with nans starting at the time before i in temp_df + 15 minutes
-                # time to start is the time in temp_df just before i. so lets look at the index before i in temp_df
-                start_time = times.index[times.index.get_loc(i) - 1] + pd.Timedelta("15m")
+                # create a df with nans starting at the time before j in temp_df + 15 minutes
+                # time to start is the time in temp_df just before j. so lets look at the index before j in temp_df
+                start_time = times.index[times.index.get_loc(j) - 1] + pd.Timedelta("15m")
                 nan_df = pd.DataFrame(np.nan, index=pd.date_range(start=start_time, periods=nans_to_add, freq='15T'),
-                                      columns=data.columns)
+                                      columns=temp_df.columns)
                 # make the index the same as the data, and move the index to Date column
                 nan_df['Date'] = nan_df.index
-                nan_df.index = data.index[:len(nan_df)]
+                
+                # --- שינינו פה שישתמש ב-temp_df ---
+                nan_df.index = temp_df.index[:len(nan_df)] 
+                
                 # add the nan_df to temp_df
-                cut_off = times.index.get_loc(i)
-                temp_df = pd.concat([data.iloc[:cut_off], nan_df, data.iloc[cut_off:]])
+                cut_off = times.index.get_loc(j)
+                temp_df = pd.concat([temp_df.iloc[:cut_off], nan_df, temp_df.iloc[cut_off:]])
 
             temp_df['GlucoseValue'] = temp_df['GlucoseValue'].interpolate(method='linear', limit_direction='both')
             temp_df['PPGR'] = temp_df['PPGR'].interpolate(method='linear', limit_direction='both')
@@ -153,6 +164,43 @@ def re_org_time(per_person):
             # temp_df['year'] = temp_df['year'].interpolate(method='linear', limit_direction='both')
 
             data = temp_df
+        # if data['Date'].diff().dt.total_seconds().gt(905).any():
+        #     print(f"splitting {i}")
+        #     # if the difference is more than an hour we do nothing (it will get split later)
+        #     # but if its less than an hour, we want to add places for the missing values with nans
+        #     # check for places where the difference is more than 15 minutes but less than an hour
+        #     jumps = data['Date'].diff().dt.total_seconds().gt(1400) & data['Date'].diff().dt.total_seconds().lt(
+        #         60 * 60 * 4)
+        #     # for each we want to add nans (as many times such that the is exactly 15 minutes between each row)
+        #     for i in data[jumps]['Date']:
+        #         # i is the index (name) of the row where the jump is
+        #         # find the difference in seconds
+        #         times = pd.DataFrame(data.index, index=data['Date'])
+        #         diff = i - times.index[times.index.get_loc(i) - 1]
+        #         diff = diff.total_seconds()
+        #         # find the number of nans to add
+        #         nans_to_add = round((diff / 900)) - 1
+        #         # create a df with nans starting at the time before i in temp_df + 15 minutes
+        #         # time to start is the time in temp_df just before i. so lets look at the index before i in temp_df
+        #         start_time = times.index[times.index.get_loc(i) - 1] + pd.Timedelta("15m")
+        #         nan_df = pd.DataFrame(np.nan, index=pd.date_range(start=start_time, periods=nans_to_add, freq='15T'),
+        #                               columns=data.columns)
+        #         # make the index the same as the data, and move the index to Date column
+        #         nan_df['Date'] = nan_df.index
+        #         nan_df.index = data.index[:len(nan_df)]
+        #         # add the nan_df to temp_df
+        #         cut_off = times.index.get_loc(i)
+        #         temp_df = pd.concat([data.iloc[:cut_off], nan_df, data.iloc[cut_off:]])
+
+        #     temp_df['GlucoseValue'] = temp_df['GlucoseValue'].interpolate(method='linear', limit_direction='both')
+        #     temp_df['PPGR'] = temp_df['PPGR'].interpolate(method='linear', limit_direction='both')
+        #     temp_df['day_of_week'] = temp_df['day_of_week'].interpolate(method='linear', limit_direction='both')
+        #     temp_df['hour'] = temp_df['hour'].interpolate(method='linear', limit_direction='both')
+        #     temp_df['minute'] = temp_df['minute'].interpolate(method='linear', limit_direction='both')
+        #     temp_df['month'] = temp_df['month'].interpolate(method='linear', limit_direction='both')
+        #     # temp_df['year'] = temp_df['year'].interpolate(method='linear', limit_direction='both')
+
+        #     data = temp_df
 
         cgm_diet2.append(data)
         name = data.index[0][4:]
@@ -211,7 +259,7 @@ print(
     f" here we removed days that had less than 300 calories or over 7000, or less than 3 logs, and the first and last day")
 print(f" We had {len(cgm_diet)} participants, and now we have {len(cgm_diet_filtered)} participants")
 # calculate how many days we had before and after filtering
-unique_days_per_participant = sum([len(df['Day'].unique()) for df in cgm_diet])
+unique_days_per_participant = sum([len(pd.to_datetime(df['Date']).dt.date.unique()) for df in cgm_diet]) #שינוי7
 unique_days_per_participant_filtered = sum([len(df['Day'].unique()) for df in cgm_diet_filtered])
 print(f" We had {unique_days_per_participant} days, and now we have {unique_days_per_participant_filtered} days")
 
@@ -280,7 +328,7 @@ def comb_close_meals(cgm_diet_filtered):
         data['sum'] = data.iloc[:, 2:l].sum(axis=1)
         idx = data['sum'].gt(0)
         # remove the temporary col
-        data = data.drop('sum', 1)
+        data = data.drop(columns=['sum'])#שינוי5
         for j in idx[idx].index:
             if j + 3 >= len(data):
                 continue
@@ -448,7 +496,7 @@ nut_bins = {
 }
 # Apply bins to each DataFrame
 for df in tqdm(data):
-    for col in bins:
+    for col in nut_bins.keys():#שינוי8
         if col in df.columns:
             df[col] = pd.cut(df[col], bins=nut_bins[col], labels=False, include_lowest=True, duplicates='drop')
 

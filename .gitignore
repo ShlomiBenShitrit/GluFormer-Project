@@ -53,3 +53,23 @@ generated_files/
 
 # PDFs (avoid accidentally committing protected papers)
 *.pdf
+# GluFormer Specific
+*.pt
+*.csv
+Models/
+wandb/
+generated_files/
+data/
+
+# Ignore huge data folders
+create_data_as_tokens/
+physionet_data/
+photos/
+
+# Ignore virtual environments
+glu_env/
+venv/
+
+# Ignore images
+*.jpg
+*.png
