@@ -53,23 +53,30 @@ generated_files/
 
 # PDFs (avoid accidentally committing protected papers)
 *.pdf
-# GluFormer Specific
-*.pt
-*.csv
+# Python & Virtual Env
+__pycache__/
+glu_env/
+venv/
+.vscode/
+.idea/
+
+# Weights & Logs (Always ignore heavy stuff)
 Models/
 wandb/
 generated_files/
 data/
+*.pt
 
-# Ignore huge data folders
-create_data_as_tokens/
-physionet_data/
-photos/
-
-# Ignore virtual environments
-glu_env/
-venv/
-
-# Ignore images
+# Images & PDFs (This protects your Git from being blocked)
 *.jpg
 *.png
+*.pdf
+**/photos/
+
+# Specific Data Handling
+# We ignore the heavy subdirectories but allow the CSV files
+create_data_as_tokens/physionet_data/**/photos/
+
+# Ensure scripts and CSVs are tracked
+!create_data_as_tokens/**/*.py
+!create_data_as_tokens/**/*.csv
