@@ -52,4 +52,4 @@ def inspect_full(file_name):
 
 if __name__ == "__main__":
     # Check both training and validation fixed files
-    inspect_full('cgm_diet_filtered_processed_aligned_tokenized_tensors_val.pt')
+    inspect_full('val_cgmacros_split.pt')
