@@ -80,3 +80,4 @@ create_data_as_tokens/physionet_data/**/photos/
 # Ensure scripts and CSVs are tracked
 !create_data_as_tokens/**/*.py
 !create_data_as_tokens/**/*.csv
+create_data_as_tokens/cgmacros-1.0.0.zip
