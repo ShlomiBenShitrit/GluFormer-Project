@@ -146,7 +146,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
     
-    # הוספנו שמירה לקובץ במקום פתיחת חלון
+    # save
     output_filename = 'simulation_result.png'
     plt.savefig(output_filename, dpi=300, bbox_inches='tight')
     print(f"✅ Simulation complete! Graph saved to '{output_filename}'")
